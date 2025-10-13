@@ -91,35 +91,37 @@ export default function VaccinationScheduleApp() {
           fontFamily: 'Arial, sans-serif',
           backgroundColor: 'white'
         }}>
-          <h1 style={{ 
-            textAlign: 'center', 
-            fontSize: '48pt', 
-            marginBottom: '60px',
-            borderBottom: '4px solid #333',
-            paddingBottom: '30px'
-          }}>
-            신익순 소아과 예방접종 안내
-          </h1>
+<h1 style={{ 
+  textAlign: 'center', 
+  fontSize: '120pt',      // 48pt → 120pt로 변경
+  marginBottom: '80px',   // 60px → 80px로 변경
+  borderBottom: '8px solid #333',  // 4px → 8px로 변경
+  paddingBottom: '40px',  // 30px → 40px로 변경
+  fontWeight: 'bold'      // 추가
+}}>
+  신익순 소아과 예방접종 안내
+</h1>
           
           {sortedSchedules.map((schedule, idx) => (
             schedule.vaccines.length > 0 && (
               <div key={idx} style={{ marginBottom: '50px' }}>
-                <h2 style={{ 
-                  fontSize: '36pt', 
-                  marginBottom: '20px',
-                  color: '#2563eb'
-                }}>
-                  {schedule.date} 이후 예방접종
-                </h2>
-                <ul style={{ 
-                  fontSize: '30pt', 
-                  lineHeight: '2',
-                  marginLeft: '40px'
-                }}>
-                  {schedule.vaccines.map((vaccine, vIdx) => (
-                    <li key={vIdx}>{vaccine}</li>
-                  ))}
-                </ul>
+<h2 style={{ 
+  fontSize: '90pt',       // 36pt → 90pt로 변경
+  marginBottom: '40px',   // 20px → 40px로 변경
+  color: '#2563eb',
+  fontWeight: 'bold'      // 추가
+}}>
+  {schedule.date} 이후 예방접종
+</h2>
+<ul style={{ 
+  fontSize: '70pt',       // 30pt → 70pt로 변경
+  lineHeight: '1.8',      // 2 → 1.8로 변경
+  marginLeft: '80px'      // 40px → 80px로 변경
+}}>
+  {schedule.vaccines.map((vaccine, vIdx) => (
+    <li key={vIdx} style={{ marginBottom: '20px' }}>{vaccine}</li>  // marginBottom 추가
+  ))}
+</ul>
               </div>
             )
           ))}
