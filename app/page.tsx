@@ -23,7 +23,10 @@ export default function VaccinationScheduleApp() {
     'Td(파상풍/디프테리아)',
     'Tdap(파상풍/디프테리아/백일해)',
     'HPV(인유두종바이러스)',
-    '인플루엔자'
+    '인플루엔자',
+    '로타장염',              // 추가
+    '수막구균(멘비오)',      // 추가
+    '수막구균(백세로)'       // 추가
   ];
 
   const addSchedule = () => {
@@ -93,7 +96,7 @@ export default function VaccinationScheduleApp() {
         }}>
 <h1 style={{ 
   textAlign: 'center', 
-  fontSize: '120pt',      // 48pt → 120pt로 변경
+  fontSize: '150pt',      // 48pt → 120pt로 변경
   marginBottom: '80px',   // 60px → 80px로 변경
   borderBottom: '8px solid #333',  // 4px → 8px로 변경
   paddingBottom: '40px',  // 30px → 40px로 변경
@@ -106,7 +109,7 @@ export default function VaccinationScheduleApp() {
             schedule.vaccines.length > 0 && (
               <div key={idx} style={{ marginBottom: '50px' }}>
 <h2 style={{ 
-  fontSize: '90pt',       // 36pt → 90pt로 변경
+  fontSize: '120pt',       // 36pt → 90pt로 변경
   marginBottom: '40px',   // 20px → 40px로 변경
   color: '#2563eb',
   fontWeight: 'bold'      // 추가
@@ -114,7 +117,7 @@ export default function VaccinationScheduleApp() {
   {schedule.date} 이후 예방접종
 </h2>
 <ul style={{ 
-  fontSize: '70pt',       // 30pt → 70pt로 변경
+  fontSize: '105pt',       // 30pt → 70pt로 변경
   lineHeight: '1.8',      // 2 → 1.8로 변경
   marginLeft: '80px'      // 40px → 80px로 변경
 }}>
