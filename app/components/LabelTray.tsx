@@ -5,6 +5,7 @@ import { cx } from "../lib/cx";
 import type { LabelPage } from "../lib/labels";
 import { btnPrimary } from "../lib/ui";
 import { LabelPreview } from "./LabelPreview";
+import { NiimbotPrint } from "./NiimbotPrint";
 
 type Props = { pages: LabelPage[]; onPrint: () => void };
 
@@ -49,6 +50,8 @@ export function LabelTray({ pages, onPrint }: Props) {
             <li>라벨 수만큼 페이지가 생기니 용지를 넉넉히 넣어 두세요.</li>
           </ul>
         </details>
+
+        <NiimbotPrint pages={pages} />
       </div>
     </div>
   );

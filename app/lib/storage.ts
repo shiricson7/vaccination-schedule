@@ -14,11 +14,14 @@ const PREFIX = "vaccination-schedule.";
 export const STORAGE_KEYS = {
   customVaccines: `${PREFIX}custom-vaccines.v1`,
   sets: `${PREFIX}sets.v1`,
+  niimbotDensity: `${PREFIX}niimbot-density.v1`,
 } as const;
 
 /** 기본값은 렌더마다 같은 객체여야 하므로 모듈 상수로 둔다. */
 export const EMPTY_STRINGS: string[] = [];
 export const EMPTY_SETS: VaccineSet[] = [];
+/** NIIMBOT 인쇄 진하기 기본값 (M2_H 기본 3) */
+export const DEFAULT_DENSITY = 3;
 
 /** localStorage를 못 쓸 때(사설 모드, 차단) 페이지가 열려 있는 동안만 기억하는 대체 저장소 */
 const memory = new Map<string, string>();
@@ -109,6 +112,12 @@ export function parseStringList(raw: unknown): string[] | null {
   return raw.filter(
     (v): v is string => typeof v === "string" && v.trim() !== "",
   );
+}
+
+export function parseDensity(raw: unknown): number | null {
+  return typeof raw === "number" && Number.isInteger(raw) && raw >= 1 && raw <= 15
+    ? raw
+    : null;
 }
 
 export function parseSets(raw: unknown): VaccineSet[] | null {

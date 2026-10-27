@@ -33,6 +33,22 @@ npm run dev
   (`vaccination-schedule.sets.v1`, `vaccination-schedule.custom-vaccines.v1`).
   다른 PC나 브라우저와는 공유되지 않습니다. 날짜·선택은 저장하지 않습니다.
 
+## NIIMBOT USB 직접 출력
+
+프린터 트레이 아래 "NIIMBOT 직접 출력"에서 **NIIMBOT 연결**을 누르고 목록에서
+프린터의 COM 포트를 고르면, 인쇄 대화상자 없이 **NIIMBOT로 N장 출력**으로 라벨이
+바로 나옵니다. Windows 프린터 드라이버는 필요 없습니다.
+
+- 브라우저: Chrome 또는 Edge (Web Serial API). `localhost`가 아니면 https 여야 합니다.
+- 프린터: NIIMBOT M2_H 기준 (300dpi, 인쇄폭 48mm, 위쪽 급지). 다른 모델은
+  라이브러리의 모델 정보(dpi·헤드 폭·급지 방향)를 따르며, 모델을 못 알아보면 M2_H
+  값으로 출력합니다.
+- 라벨은 `app/lib/labelCanvas.ts`가 화면의 라벨과 같은 규칙(mm/pt)으로 300dpi
+  비트맵에 그려서 보냅니다. 정품 NIIMBOT 라벨(RFID)이 아니면 프린터가 거부할 수 있습니다.
+- 프로토콜은 오픈소스 [`@mmote/niimbluelib`](https://www.npmjs.com/package/@mmote/niimbluelib)
+  (NIIMBOT 비공식 구현)을 쓰고, 버튼을 눌렀을 때만 내려받습니다.
+- NIIMBOT PC 앱이 같은 포트를 잡고 있으면 연결이 실패하니 먼저 닫으세요.
+
 ## 라벨 출력 설정
 
 인쇄 대화상자에서 아래처럼 맞춥니다. 라벨 1장이 페이지 1장입니다.
