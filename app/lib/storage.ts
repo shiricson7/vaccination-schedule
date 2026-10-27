@@ -6,6 +6,7 @@ import {
   useSyncExternalStore,
   type SetStateAction,
 } from "react";
+import type { TextTemplate } from "./text";
 import type { VaccineSet } from "./vaccines";
 
 const PREFIX = "vaccination-schedule.";
@@ -15,11 +16,13 @@ export const STORAGE_KEYS = {
   customVaccines: `${PREFIX}custom-vaccines.v1`,
   sets: `${PREFIX}sets.v1`,
   niimbotDensity: `${PREFIX}niimbot-density.v1`,
+  textTemplates: `${PREFIX}text-templates.v1`,
 } as const;
 
 /** 기본값은 렌더마다 같은 객체여야 하므로 모듈 상수로 둔다. */
 export const EMPTY_STRINGS: string[] = [];
 export const EMPTY_SETS: VaccineSet[] = [];
+export const EMPTY_TEMPLATES: TextTemplate[] = [];
 /** NIIMBOT 인쇄 진하기 기본값 (M2_H 기본 3) */
 export const DEFAULT_DENSITY = 3;
 
@@ -135,4 +138,22 @@ export function parseSets(raw: unknown): VaccineSet[] | null {
     });
   }
   return sets;
+}
+
+export function parseTemplates(raw: unknown): TextTemplate[] | null {
+  if (!Array.isArray(raw)) return null;
+  const templates: TextTemplate[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const { id, name, text, align } = item as Record<string, unknown>;
+    if (typeof id !== "string" || typeof name !== "string") continue;
+    if (typeof text !== "string") continue;
+    templates.push({
+      id,
+      name,
+      text,
+      align: align === "left" ? "left" : "center",
+    });
+  }
+  return templates;
 }

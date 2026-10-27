@@ -3,8 +3,9 @@ import type { LabelPage } from "./labels";
 import { CLINIC_NAME } from "./vaccines";
 
 /**
- * 라벨 1장을 프린터 비트맵(캔버스)으로 그린다.
- * globals.css의 .label 레이아웃(여백·글자 크기·체크박스)을 mm/pt 단위 그대로 옮겼다.
+ * 라벨을 프린터 비트맵(캔버스)으로 그린다.
+ * 접종 안내 라벨은 globals.css의 .label 레이아웃(여백·글자 크기·체크박스)을 mm/pt 단위 그대로 옮겼고,
+ * 텍스트 라벨은 문구가 한 장에 들어가도록 글자 크기를 자동으로 고른다.
  */
 export type LabelCanvasOptions = {
   dpi: number;
@@ -17,13 +18,44 @@ export type LabelCanvasOptions = {
   fontFamily: string;
 };
 
+export type TextAlign = "left" | "center";
+
+export type TextLabelOptions = LabelCanvasOptions & {
+  text: string;
+  align: TextAlign;
+};
+
+export type TextLabelResult = {
+  canvas: HTMLCanvasElement;
+  /** 자동으로 고른 글자 크기 (pt) */
+  fontPt: number;
+  lines: number;
+  /** 가장 작은 크기로도 다 들어가지 않아 뒷부분이 잘렸는지 */
+  overflow: boolean;
+};
+
 /** 이 밝기보다 어두우면 검정으로 찍는다 (안티앨리어싱 가장자리 정리) */
 const BLACK_THRESHOLD = 150;
+/** 텍스트 라벨에서 시도하는 글자 크기 (큰 것부터) */
+const TEXT_SIZES_PT = [28, 26, 24, 22, 20, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8];
+const TEXT_LINE_HEIGHT = 1.3;
+/** 이 크기 이상에서 줄이 안 꺾이면 그 크기를 우선 쓴다 */
+const NO_WRAP_MIN_PT = 10;
 
-export function renderLabelCanvas(
-  page: LabelPage,
-  o: LabelCanvasOptions,
-): HTMLCanvasElement {
+type LabelContext = {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  w: number;
+  h: number;
+  mm: (v: number) => number;
+  pt: (v: number) => number;
+  /** 좌우 여백 (인쇄 가능 폭이 라벨보다 좁은 만큼 줄어든다) */
+  padX: number;
+  font: (weight: number, sizePx: number) => void;
+  text: (s: string, x: number, yMid: number, align?: CanvasTextAlign) => void;
+};
+
+function createLabelContext(o: LabelCanvasOptions): LabelContext {
   const mm = (v: number) => (v / 25.4) * o.dpi;
   const pt = (v: number) => (v / 72) * o.dpi;
 
@@ -41,17 +73,34 @@ export function renderLabelCanvas(
   ctx.strokeStyle = "#000";
   ctx.textBaseline = "middle";
 
-  const font = (weight: number, sizePx: number) => {
-    ctx.font = `${weight} ${sizePx}px ${o.fontFamily}`;
-  };
-  const text = (s: string, x: number, yMid: number, align: CanvasTextAlign = "left") => {
-    ctx.textAlign = align;
-    ctx.fillText(s, x, yMid);
-  };
-
   // 인쇄 가능 폭이 라벨 폭보다 좁은 만큼(M2_H: 50mm 중 48mm) 좌우 여백을 줄인다.
   const edgeLoss = Math.max(0, (mm(o.labelWidthMm) - w) / 2);
   const padX = Math.max(mm(0.8), mm(2.2) - edgeLoss);
+
+  return {
+    canvas,
+    ctx,
+    w,
+    h,
+    mm,
+    pt,
+    padX,
+    font: (weight, sizePx) => {
+      ctx.font = `${weight} ${sizePx}px ${o.fontFamily}`;
+    },
+    text: (s, x, yMid, align = "left") => {
+      ctx.textAlign = align;
+      ctx.fillText(s, x, yMid);
+    },
+  };
+}
+
+/** 접종 안내 라벨 1장 */
+export function renderLabelCanvas(
+  page: LabelPage,
+  o: LabelCanvasOptions,
+): HTMLCanvasElement {
+  const { canvas, ctx, w, h, mm, pt, padX, font, text } = createLabelContext(o);
   const padTop = mm(2);
   const padBottom = mm(1.5);
   const contentW = w - padX * 2;
@@ -111,6 +160,59 @@ export function renderLabelCanvas(
 
   threshold(ctx, w, h);
   return canvas;
+}
+
+/**
+ * 자유 문구 라벨 1장. 줄바꿈은 그대로 살리고, 큰 글자부터 시도해 한 장에 들어가는
+ * 가장 큰 크기를 고른다. 세로는 가운데 정렬.
+ */
+export function renderTextLabelCanvas(o: TextLabelOptions): TextLabelResult {
+  const { canvas, ctx, w, h, mm, pt, padX, font, text } = createLabelContext(o);
+  const padTop = mm(2);
+  const padBottom = mm(2);
+  const contentW = w - padX * 2;
+  const contentH = h - padTop - padBottom;
+  const paragraphs = o.text.replace(/\r\n?/g, "\n").split("\n");
+
+  const layout = (sizePt: number) => {
+    font(600, pt(sizePt));
+    const lines = paragraphs.flatMap((p) =>
+      p.trim() === "" ? [""] : wrapText(ctx, p, contentW),
+    );
+    return {
+      sizePt,
+      lines,
+      lineH: pt(sizePt) * TEXT_LINE_HEIGHT,
+      /** 입력한 줄이 폭에 안 맞아 자동으로 꺾였는지 */
+      wrapped: lines.length > paragraphs.length,
+    };
+  };
+
+  const layouts = TEXT_SIZES_PT.map(layout);
+  const fits = (l: (typeof layouts)[number]) => l.lines.length * l.lineH <= contentH;
+  // 입력한 줄바꿈이 그대로 유지되는 크기를 우선 고르고(너무 작아지지 않는 선에서),
+  // 없으면 자동 줄바꿈을 허용한 가장 큰 크기를 고른다.
+  let chosen =
+    layouts.find((l) => !l.wrapped && l.sizePt >= NO_WRAP_MIN_PT && fits(l)) ??
+    layouts.find(fits);
+  let overflow = false;
+  if (!chosen) {
+    overflow = true;
+    chosen = layouts[layouts.length - 1];
+  }
+
+  const maxLines = Math.max(1, Math.floor(contentH / chosen.lineH));
+  const lines = chosen.lines.slice(0, maxLines);
+  font(600, pt(chosen.sizePt));
+  let y = padTop + (contentH - lines.length * chosen.lineH) / 2;
+  const x = o.align === "center" ? w / 2 : padX;
+  for (const line of lines) {
+    text(line, x, y + chosen.lineH / 2, o.align === "center" ? "center" : "left");
+    y += chosen.lineH;
+  }
+
+  threshold(ctx, w, h);
+  return { canvas, fontPt: chosen.sizePt, lines: lines.length, overflow };
 }
 
 /**

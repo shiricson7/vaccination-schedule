@@ -1,17 +1,24 @@
 "use client";
 
-import { Printer, RotateCcw, Syringe } from "lucide-react";
+import { Cable, LoaderCircle, Printer, RotateCcw, Syringe } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
+import { useNiimbot } from "../hooks/useNiimbot";
+import { useTextLabelRender } from "../hooks/useTextLabelRender";
 import { cx } from "../lib/cx";
+import type { TextAlign } from "../lib/labelCanvas";
 import { paginateLabels, type Schedule } from "../lib/labels";
+import { buildScheduleJobs, buildTextJob } from "../lib/niimbot";
 import {
   EMPTY_SETS,
   EMPTY_STRINGS,
+  EMPTY_TEMPLATES,
   parseSets,
   parseStringList,
+  parseTemplates,
   STORAGE_KEYS,
   useStoredState,
 } from "../lib/storage";
+import type { TextTemplate } from "../lib/text";
 import { btnGhost, btnPrimary } from "../lib/ui";
 import {
   CLINIC_NAME,
@@ -23,29 +30,44 @@ import {
 } from "../lib/vaccines";
 import { DateSidebar } from "./DateSidebar";
 import { LabelMeasure, useLabelMetrics } from "./LabelMeasure";
+import { LabelPreview } from "./LabelPreview";
 import { LabelTray } from "./LabelTray";
-import { PrintSheet } from "./PrintSheet";
+import { niimbotButtonDisabled, niimbotButtonLabel } from "./NiimbotPanel";
 import { StatTiles } from "./StatTiles";
+import { TextEditor } from "./TextEditor";
+import { TextLabelPreview } from "./TextLabelPreview";
+import { TextTemplates } from "./TextTemplates";
 import { VaccinePanel } from "./VaccinePanel";
+
+type Mode = "schedule" | "text";
+
+const MODES: { value: Mode; label: string; short: string }[] = [
+  { value: "schedule", label: "접종 안내", short: "접종" },
+  { value: "text", label: "텍스트 라벨", short: "텍스트" },
+];
 
 const DEFAULT_SET = new Set<string>(DEFAULT_VACCINES);
 
 export function VaccinationApp() {
+  const [mode, setMode] = useState<Mode>("schedule");
+
+  // ── 접종 안내 ──────────────────────────────────────────
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dateInput, setDateInput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // 이 브라우저에 남는 설정: 직접 추가한 백신, 즐겨찾기 세트
+  // 이 브라우저에 남는 설정: 직접 추가한 백신, 즐겨찾기 세트, 자주 쓰는 문구
   const [customVaccines, setCustomVaccines] = useStoredState(
     STORAGE_KEYS.customVaccines,
     EMPTY_STRINGS,
     parseStringList,
   );
-  const [sets, setSets] = useStoredState(
-    STORAGE_KEYS.sets,
-    EMPTY_SETS,
-    parseSets,
+  const [sets, setSets] = useStoredState(STORAGE_KEYS.sets, EMPTY_SETS, parseSets);
+  const [templates, setTemplates] = useStoredState(
+    STORAGE_KEYS.textTemplates,
+    EMPTY_TEMPLATES,
+    parseTemplates,
   );
 
   const allVaccines = useMemo(
@@ -73,6 +95,26 @@ export function VaccinationApp() {
 
   const selected = sorted.find((s) => s.date === selectedDate) ?? null;
   const vaccineTotal = sorted.reduce((n, s) => n + s.vaccines.length, 0);
+
+  // ── 텍스트 라벨 ────────────────────────────────────────
+  const [text, setText] = useState("");
+  const [align, setAlign] = useState<TextAlign>("center");
+  const [copies, setCopies] = useState(1);
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
+  const hasText = text.trim() !== "";
+
+  // ── 프린터 ─────────────────────────────────────────────
+  const niimbot = useNiimbot();
+  const textRender = useTextLabelRender(text, align, niimbot.profile);
+  const jobCount = mode === "schedule" ? pages.length : hasText ? copies : 0;
+
+  const printCurrent = () => {
+    if (mode === "schedule") {
+      void niimbot.print((profile) => buildScheduleJobs(pages, profile));
+    } else if (hasText) {
+      void niimbot.print((profile) => buildTextJob(text, align, copies, profile));
+    }
+  };
 
   // ── 날짜 ──────────────────────────────────────────────
   const addSchedule = (e: FormEvent) => {
@@ -196,104 +238,190 @@ export function VaccinationApp() {
     );
   };
 
-  // ── 인쇄 ──────────────────────────────────────────────
-  const print = async () => {
-    try {
-      // 라벨 폰트가 다 내려받아진 뒤에 인쇄해야 대체 폰트로 찍히지 않는다.
-      await document.fonts.ready;
-    } catch {
-      /* 폰트 API가 없어도 인쇄는 진행 */
-    }
-    window.print();
+  // ── 자주 쓰는 문구 ─────────────────────────────────────
+  const loadTemplate = (t: TextTemplate) => {
+    setText(t.text);
+    setAlign(t.align);
+    setActiveTemplateId(t.id);
   };
 
-  const canPrint = pages.length > 0;
+  const saveTemplate = (rawName: string): string | null => {
+    const name = normalizeName(rawName);
+    if (!name) return "문구 이름을 입력해 주세요.";
+    if (!hasText) return "먼저 문구를 입력해 주세요.";
+    if (templates.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
+      return "같은 이름의 문구가 이미 있습니다.";
+    }
+    const id = makeId();
+    setTemplates((prev) => [...prev, { id, name, text, align }]);
+    setActiveTemplateId(id);
+    return null;
+  };
+
+  const deleteTemplate = (t: TextTemplate) => {
+    if (window.confirm(`'${t.name}' 문구를 삭제할까요?`)) {
+      setTemplates((prev) => prev.filter((x) => x.id !== t.id));
+      if (activeTemplateId === t.id) setActiveTemplateId(null);
+    }
+  };
+
+  const mainButtonIcon = niimbot.busy ? (
+    <LoaderCircle className="size-4 animate-spin" />
+  ) : niimbot.profile ? (
+    <Printer className="size-4" />
+  ) : (
+    <Cable className="size-4" />
+  );
 
   return (
     <>
-      <div className="app-shell flex min-h-dvh flex-col lg:h-dvh">
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line bg-surface px-4 sm:px-6 lg:static">
+      <div className="flex min-h-dvh flex-col lg:h-dvh">
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-surface px-4 sm:px-6 lg:static">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent-strong">
               <Syringe className="size-4" />
             </span>
-            <div className="min-w-0 leading-tight">
+            <div className="min-w-0 leading-tight max-sm:hidden">
               <p className="eyebrow truncate">예방접종 안내 라벨</p>
               <p className="truncate text-sm font-semibold">{CLINIC_NAME}</p>
             </div>
           </div>
+
+          <div
+            role="group"
+            aria-label="작업 종류"
+            className="inline-flex shrink-0 rounded-xl border border-line bg-surface-2 p-0.5"
+          >
+            {MODES.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                aria-pressed={mode === m.value}
+                onClick={() => setMode(m.value)}
+                className={cx(
+                  "h-8 rounded-[10px] px-3 text-sm font-medium transition-colors",
+                  mode === m.value
+                    ? "bg-surface text-ink shadow-[0_1px_2px_rgb(43_38_34/0.08)]"
+                    : "text-ink-muted hover:text-ink",
+                )}
+              >
+                <span className="max-sm:hidden">{m.label}</span>
+                <span className="sm:hidden">{m.short}</span>
+              </button>
+            ))}
+          </div>
+
           <div className="flex shrink-0 items-center gap-1.5">
+            {mode === "schedule" && (
+              <button
+                type="button"
+                onClick={clearAll}
+                disabled={schedules.length === 0}
+                className={cx(btnGhost, "max-sm:hidden")}
+              >
+                <RotateCcw className="size-4" />
+                초기화
+              </button>
+            )}
             <button
               type="button"
-              onClick={clearAll}
-              disabled={schedules.length === 0}
-              className={cx(btnGhost, "max-sm:hidden")}
-            >
-              <RotateCcw className="size-4" />
-              초기화
-            </button>
-            <button
-              type="button"
-              onClick={print}
-              disabled={!canPrint}
-              title={canPrint ? undefined : "백신을 선택하면 출력할 수 있습니다"}
+              onClick={niimbot.profile ? printCurrent : () => void niimbot.connect()}
+              disabled={niimbotButtonDisabled(niimbot, jobCount)}
+              title={
+                !niimbot.supported
+                  ? "Chrome 또는 Edge에서 열어야 출력할 수 있습니다"
+                  : niimbot.profile && jobCount === 0
+                    ? mode === "schedule"
+                      ? "백신을 선택하면 출력할 수 있습니다"
+                      : "문구를 입력하면 출력할 수 있습니다"
+                    : undefined
+              }
               className={btnPrimary}
             >
-              <Printer className="size-4" />
-              라벨 출력
-              {canPrint && (
-                <span className="rounded-md bg-black/15 px-1.5 font-mono text-xs tabular-nums">
-                  {pages.length}장
-                </span>
-              )}
+              {mainButtonIcon}
+              <span className="max-sm:hidden">{niimbotButtonLabel(niimbot, jobCount)}</span>
+              <span className="sm:hidden">
+                {niimbot.profile ? `${jobCount}장 출력` : "연결"}
+              </span>
             </button>
           </div>
         </header>
 
         <div className="grid flex-1 lg:min-h-0 lg:grid-cols-[15rem_minmax(0,1fr)_21rem]">
           <aside
-            aria-label="접종 예정일"
+            aria-label={mode === "schedule" ? "접종 예정일" : "자주 쓰는 문구"}
             className="border-b border-line bg-surface/70 lg:overflow-y-auto lg:border-r lg:border-b-0"
           >
-            <DateSidebar
-              schedules={sorted}
-              selectedDate={selectedDate}
-              labelCountByDate={labelCountByDate}
-              dateInput={dateInput}
-              error={error}
-              onDateInputChange={(value) => {
-                setDateInput(value);
-                setError(null);
-              }}
-              onAdd={addSchedule}
-              onSelect={setSelectedDate}
-            />
+            {mode === "schedule" ? (
+              <DateSidebar
+                schedules={sorted}
+                selectedDate={selectedDate}
+                labelCountByDate={labelCountByDate}
+                dateInput={dateInput}
+                error={error}
+                onDateInputChange={(value) => {
+                  setDateInput(value);
+                  setError(null);
+                }}
+                onAdd={addSchedule}
+                onSelect={setSelectedDate}
+              />
+            ) : (
+              <TextTemplates
+                templates={templates}
+                activeId={activeTemplateId}
+                canSave={hasText}
+                currentText={text}
+                onLoad={loadTemplate}
+                onSave={saveTemplate}
+                onDelete={deleteTemplate}
+              />
+            )}
           </aside>
 
           <main className="flex min-w-0 flex-col gap-4 p-4 sm:p-6 lg:overflow-y-auto">
-            <h1 className="sr-only">예방접종 스케줄</h1>
-            <StatTiles
-              dates={sorted.length}
-              vaccines={vaccineTotal}
-              labels={pages.length}
-            />
-            {selected ? (
-              <VaccinePanel
-                schedule={selected}
-                labelCount={labelCountByDate.get(selected.date) ?? 0}
-                vaccines={allVaccines}
-                customVaccines={customVaccines}
-                sets={sets}
-                onToggle={(vaccine) => toggleVaccine(selected.date, vaccine)}
-                onRemove={() => removeSchedule(selected.date)}
-                onApplySet={(set) => applySet(selected.date, set)}
-                onSaveSet={(name) => saveSet(selected.date, name)}
-                onDeleteSet={deleteSet}
-                onAddVaccine={addVaccine}
-                onDeleteVaccine={deleteVaccine}
-              />
+            <h1 className="sr-only">
+              {mode === "schedule" ? "예방접종 스케줄" : "텍스트 라벨"}
+            </h1>
+            {mode === "schedule" ? (
+              <>
+                <StatTiles
+                  dates={sorted.length}
+                  vaccines={vaccineTotal}
+                  labels={pages.length}
+                />
+                {selected ? (
+                  <VaccinePanel
+                    schedule={selected}
+                    labelCount={labelCountByDate.get(selected.date) ?? 0}
+                    vaccines={allVaccines}
+                    customVaccines={customVaccines}
+                    sets={sets}
+                    onToggle={(vaccine) => toggleVaccine(selected.date, vaccine)}
+                    onRemove={() => removeSchedule(selected.date)}
+                    onApplySet={(set) => applySet(selected.date, set)}
+                    onSaveSet={(name) => saveSet(selected.date, name)}
+                    onDeleteSet={deleteSet}
+                    onAddVaccine={addVaccine}
+                    onDeleteVaccine={deleteVaccine}
+                  />
+                ) : (
+                  <EmptyPanel hasDates={sorted.length > 0} />
+                )}
+              </>
             ) : (
-              <EmptyPanel hasDates={sorted.length > 0} />
+              <TextEditor
+                text={text}
+                align={align}
+                copies={copies}
+                render={textRender}
+                onTextChange={(value) => {
+                  setText(value);
+                  setActiveTemplateId(null);
+                }}
+                onAlignChange={setAlign}
+                onCopiesChange={setCopies}
+              />
             )}
           </main>
 
@@ -301,13 +429,27 @@ export function VaccinationApp() {
             aria-label="라벨 미리보기"
             className="border-t border-line bg-surface/70 lg:min-h-0 lg:border-l lg:border-t-0"
           >
-            <LabelTray pages={pages} onPrint={print} />
+            <LabelTray
+              count={jobCount}
+              niimbot={niimbot}
+              onPrint={printCurrent}
+              onConnect={() => void niimbot.connect()}
+            >
+              {mode === "schedule" ? (
+                <LabelPreview pages={pages} />
+              ) : (
+                <TextLabelPreview
+                  canvas={textRender?.canvas ?? null}
+                  empty={!hasText}
+                  copies={copies}
+                />
+              )}
+            </LabelTray>
           </aside>
         </div>
       </div>
 
       <LabelMeasure items={allVaccines} measureRef={measureRef} />
-      <PrintSheet pages={pages} />
     </>
   );
 }
