@@ -21,6 +21,8 @@
   --mint-strong: #7fd3b5;
   --mint-ink: #1f6b53;
   --butter: #fff4d6;
+  --sun: #f2c14e;
+  --sun-ink: #6b4a00;
   --danger: #c4452d;
   --danger-soft: #fde8e3;
   color-scheme: light;
@@ -43,6 +45,8 @@
   --color-mint-strong: var(--mint-strong);
   --color-mint-ink: var(--mint-ink);
   --color-butter: var(--butter);
+  --color-sun: var(--sun);
+  --color-sun-ink: var(--sun-ink);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --font-sans:

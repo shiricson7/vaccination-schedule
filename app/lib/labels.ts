@@ -38,11 +38,12 @@ export type LabelMetrics = {
 export function paginateLabels(
   schedules: readonly Schedule[],
   metrics: LabelMetrics | null,
+  order: readonly string[],
 ): LabelPage[] {
   const pages: LabelPage[] = [];
   for (const s of schedules) {
     if (s.vaccines.length === 0) continue;
-    const items = sortVaccines(s.vaccines);
+    const items = sortVaccines(s.vaccines, order);
     const chunks = metrics
       ? packByHeight(items, metrics)
       : chunk(items, FALLBACK_ITEMS_PER_LABEL);

@@ -4,8 +4,23 @@ import { Printer, RotateCcw, Syringe } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { cx } from "../lib/cx";
 import { paginateLabels, type Schedule } from "../lib/labels";
+import {
+  EMPTY_SETS,
+  EMPTY_STRINGS,
+  parseSets,
+  parseStringList,
+  STORAGE_KEYS,
+  useStoredState,
+} from "../lib/storage";
 import { btnGhost, btnPrimary } from "../lib/ui";
-import { CLINIC_NAME, VACCINES } from "../lib/vaccines";
+import {
+  CLINIC_NAME,
+  DEFAULT_VACCINES,
+  makeId,
+  normalizeName,
+  sortVaccines,
+  type VaccineSet,
+} from "../lib/vaccines";
 import { DateSidebar } from "./DateSidebar";
 import { LabelMeasure, useLabelMetrics } from "./LabelMeasure";
 import { LabelTray } from "./LabelTray";
@@ -13,18 +28,43 @@ import { PrintSheet } from "./PrintSheet";
 import { StatTiles } from "./StatTiles";
 import { VaccinePanel } from "./VaccinePanel";
 
+const DEFAULT_SET = new Set<string>(DEFAULT_VACCINES);
+
 export function VaccinationApp() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dateInput, setDateInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const { ref: measureRef, metrics } = useLabelMetrics(VACCINES);
+
+  // 이 브라우저에 남는 설정: 직접 추가한 백신, 즐겨찾기 세트
+  const [customVaccines, setCustomVaccines] = useStoredState(
+    STORAGE_KEYS.customVaccines,
+    EMPTY_STRINGS,
+    parseStringList,
+  );
+  const [sets, setSets] = useStoredState(
+    STORAGE_KEYS.sets,
+    EMPTY_SETS,
+    parseSets,
+  );
+
+  const allVaccines = useMemo(
+    () => [
+      ...DEFAULT_VACCINES,
+      ...customVaccines.filter((v) => !DEFAULT_SET.has(v)),
+    ],
+    [customVaccines],
+  );
+  const { ref: measureRef, metrics } = useLabelMetrics(allVaccines);
 
   const sorted = useMemo(
     () => [...schedules].sort((a, b) => a.date.localeCompare(b.date)),
     [schedules],
   );
-  const pages = useMemo(() => paginateLabels(sorted, metrics), [sorted, metrics]);
+  const pages = useMemo(
+    () => paginateLabels(sorted, metrics, allVaccines),
+    [sorted, metrics, allVaccines],
+  );
   const labelCountByDate = useMemo(() => {
     const counts = new Map<string, number>();
     for (const p of pages) counts.set(p.date, (counts.get(p.date) ?? 0) + 1);
@@ -34,6 +74,7 @@ export function VaccinationApp() {
   const selected = sorted.find((s) => s.date === selectedDate) ?? null;
   const vaccineTotal = sorted.reduce((n, s) => n + s.vaccines.length, 0);
 
+  // ── 날짜 ──────────────────────────────────────────────
   const addSchedule = (e: FormEvent) => {
     e.preventDefault();
     if (!dateInput) {
@@ -60,26 +101,102 @@ export function VaccinationApp() {
     }
   };
 
-  const toggleVaccine = (date: string, vaccine: string) =>
-    setSchedules((prev) =>
-      prev.map((s) => {
-        if (s.date !== date) return s;
-        const vaccines = s.vaccines.includes(vaccine)
-          ? s.vaccines.filter((v) => v !== vaccine)
-          : [...s.vaccines, vaccine];
-        return { ...s, vaccines };
-      }),
-    );
-
   const clearAll = () => {
     if (schedules.length === 0) return;
-    if (window.confirm("모든 날짜와 선택을 지울까요?")) {
+    if (
+      window.confirm(
+        "모든 날짜와 선택을 지울까요?\n(즐겨찾기 세트와 추가한 백신은 남습니다)",
+      )
+    ) {
       setSchedules([]);
       setSelectedDate(null);
       setError(null);
     }
   };
 
+  // ── 백신 선택 ──────────────────────────────────────────
+  const updateVaccines = (date: string, update: (current: string[]) => string[]) =>
+    setSchedules((prev) =>
+      prev.map((s) => (s.date === date ? { ...s, vaccines: update(s.vaccines) } : s)),
+    );
+
+  const toggleVaccine = (date: string, vaccine: string) =>
+    updateVaccines(date, (current) =>
+      current.includes(vaccine)
+        ? current.filter((v) => v !== vaccine)
+        : [...current, vaccine],
+    );
+
+  /** 세트의 백신이 모두 선택돼 있으면 해제, 아니면 빠진 것을 한 번에 선택 */
+  const applySet = (date: string, set: VaccineSet) =>
+    updateVaccines(date, (current) => {
+      const members = set.vaccines.filter((v) => allVaccines.includes(v));
+      if (members.length === 0) return current;
+      const allOn = members.every((v) => current.includes(v));
+      return allOn
+        ? current.filter((v) => !members.includes(v))
+        : [...current, ...members.filter((v) => !current.includes(v))];
+    });
+
+  // ── 즐겨찾기 세트 ──────────────────────────────────────
+  const saveSet = (date: string, rawName: string): string | null => {
+    const name = normalizeName(rawName);
+    if (!name) return "세트 이름을 입력해 주세요.";
+    if (sets.some((s) => s.name.toLowerCase() === name.toLowerCase())) {
+      return "같은 이름의 세트가 이미 있습니다.";
+    }
+    const current = schedules.find((s) => s.date === date);
+    if (!current || current.vaccines.length === 0) {
+      return "먼저 백신을 선택해 주세요.";
+    }
+    setSets((prev) => [
+      ...prev,
+      { id: makeId(), name, vaccines: sortVaccines(current.vaccines, allVaccines) },
+    ]);
+    return null;
+  };
+
+  const deleteSet = (set: VaccineSet) => {
+    if (window.confirm(`'${set.name}' 세트를 삭제할까요?`)) {
+      setSets((prev) => prev.filter((s) => s.id !== set.id));
+    }
+  };
+
+  // ── 백신 목록 추가/삭제 ────────────────────────────────
+  const addVaccine = (rawName: string): string | null => {
+    const name = normalizeName(rawName);
+    if (!name) return "백신 이름을 입력해 주세요.";
+    if (allVaccines.some((v) => v.toLowerCase() === name.toLowerCase())) {
+      return "이미 목록에 있는 백신입니다.";
+    }
+    setCustomVaccines((prev) => [...prev, name]);
+    return null;
+  };
+
+  const deleteVaccine = (vaccine: string) => {
+    if (
+      !window.confirm(
+        `'${vaccine}' 백신을 목록에서 삭제할까요?\n선택한 날짜와 세트에서도 빠집니다.`,
+      )
+    ) {
+      return;
+    }
+    setCustomVaccines((prev) => prev.filter((v) => v !== vaccine));
+    setSchedules((prev) =>
+      prev.map((s) =>
+        s.vaccines.includes(vaccine)
+          ? { ...s, vaccines: s.vaccines.filter((v) => v !== vaccine) }
+          : s,
+      ),
+    );
+    setSets((prev) =>
+      prev
+        .map((set) => ({ ...set, vaccines: set.vaccines.filter((v) => v !== vaccine) }))
+        .filter((set) => set.vaccines.length > 0),
+    );
+  };
+
+  // ── 인쇄 ──────────────────────────────────────────────
   const print = async () => {
     try {
       // 라벨 폰트가 다 내려받아진 뒤에 인쇄해야 대체 폰트로 찍히지 않는다.
@@ -164,8 +281,16 @@ export function VaccinationApp() {
               <VaccinePanel
                 schedule={selected}
                 labelCount={labelCountByDate.get(selected.date) ?? 0}
+                vaccines={allVaccines}
+                customVaccines={customVaccines}
+                sets={sets}
                 onToggle={(vaccine) => toggleVaccine(selected.date, vaccine)}
                 onRemove={() => removeSchedule(selected.date)}
+                onApplySet={(set) => applySet(selected.date, set)}
+                onSaveSet={(name) => saveSet(selected.date, name)}
+                onDeleteSet={deleteSet}
+                onAddVaccine={addVaccine}
+                onDeleteVaccine={deleteVaccine}
               />
             ) : (
               <EmptyPanel hasDates={sorted.length > 0} />
@@ -181,7 +306,7 @@ export function VaccinationApp() {
         </div>
       </div>
 
-      <LabelMeasure items={VACCINES} measureRef={measureRef} />
+      <LabelMeasure items={allVaccines} measureRef={measureRef} />
       <PrintSheet pages={pages} />
     </>
   );
