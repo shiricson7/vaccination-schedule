@@ -1,6 +1,15 @@
+// Web Serial API 타입(SerialPort, navigator.serial). TypeScript 6부터 @types가 자동으로
+// 포함되지 않아 여기서 참조한다. 삼중 슬래시 지시문은 파일 맨 위에 있어야 하며
+// 프로그램 전체에 전역으로 적용된다.
+/// <reference types="w3c-web-serial" />
 "use client";
 
-import { renderLabelCanvas, rotateForLeftFeed } from "./labelCanvas";
+import {
+  renderLabelCanvas,
+  renderTextLabelCanvas,
+  rotateForLeftFeed,
+  type TextAlign,
+} from "./labelCanvas";
 import { LABEL, type LabelPage } from "./labels";
 
 /**
@@ -22,6 +31,37 @@ export function isWebSerialSupported(): boolean {
   return typeof navigator !== "undefined" && "serial" in navigator;
 }
 
+/**
+ * Claude 앱의 미리보기 창 같은 임베디드 브라우저. Web Serial API는 있지만
+ * 포트 선택 창을 띄울 수 없어 연결이 항상 실패한다.
+ */
+export function isEmbeddedBrowser(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    /\b(Claude|Electron)\//.test(navigator.userAgent)
+  );
+}
+
+/** NIIMBOT 프린터의 USB 제조사 ID */
+const NIIMBOT_VENDOR_ID = 0x3513;
+
+/**
+ * 이 사이트에 이미 허용된 포트 중 NIIMBOT을 찾는다. 선택 창 없이 바로 열 수 있다.
+ * NIIMBOT이 없고 허용된 포트가 하나뿐이면 그 포트를 쓴다.
+ */
+export async function findAuthorizedPort(): Promise<SerialPort | null> {
+  if (!isWebSerialSupported()) return null;
+  try {
+    const ports = await navigator.serial.getPorts();
+    const niimbot = ports.find(
+      (p) => p.getInfo().usbVendorId === NIIMBOT_VENDOR_ID,
+    );
+    return niimbot ?? (ports.length === 1 ? ports[0] : null);
+  } catch {
+    return null;
+  }
+}
+
 export type PrinterProfile = {
   model: string;
   dpi: number;
@@ -34,8 +74,8 @@ export type PrinterProfile = {
   recognized: boolean;
 };
 
-/** 모델을 못 알아봤을 때 쓰는 M2_H 값 (300dpi, 헤드 567px = 48mm, 위쪽 급지) */
-const M2_H_PROFILE: PrinterProfile = {
+/** 모델을 못 알아봤을 때(그리고 연결 전 미리보기에) 쓰는 M2_H 값: 300dpi, 헤드 567px = 48mm, 위쪽 급지 */
+export const M2_H_PROFILE: PrinterProfile = {
   model: "M2_H",
   dpi: 300,
   printheadPixels: 567,
@@ -52,14 +92,38 @@ export type NiimbotConnection = {
   taskType: TaskName;
 };
 
-/** 포트 선택 대화상자를 띄우므로 반드시 클릭 핸들러 안에서 불러야 한다. */
+/** 인쇄 작업 하나: 비트맵과 장수 */
+export type PrintJob = { canvas: HTMLCanvasElement; quantity: number };
+
+export type PrintProgress = { page: number; total: number; percent: number };
+
+/** 프린터 프로필에 맞는 캔버스 크기 (헤드 폭을 넘지 않는 라벨 폭 × 라벨 높이) */
+export function canvasSizeFor(profile: PrinterProfile) {
+  const dpi = profile.dpi;
+  return {
+    dpi,
+    widthPx: Math.min(
+      profile.printheadPixels,
+      Math.round((LABEL.widthMm / 25.4) * dpi),
+    ),
+    heightPx: Math.round((LABEL.heightMm / 25.4) * dpi),
+    labelWidthMm: LABEL.widthMm,
+    labelHeightMm: LABEL.heightMm,
+  };
+}
+
+/**
+ * 프린터에 연결한다. `port`를 주면(이미 허용된 포트) 선택 창 없이 바로 열고,
+ * 없으면 포트 선택 창을 띄우므로 그때는 반드시 클릭 핸들러 안에서 불러야 한다.
+ */
 export async function connectNiimbot(
   onDisconnect: () => void,
+  port?: SerialPort,
 ): Promise<NiimbotConnection> {
   const lib = await loadLib();
   const client = new lib.NiimbotSerialClient();
   client.on("disconnect", onDisconnect);
-  await client.connect();
+  await client.connect(port ? { authorizedPort: port } : undefined);
 
   const meta = client.getModelMetadata();
   const profile: PrinterProfile = meta
@@ -86,32 +150,23 @@ export async function disconnectNiimbot(conn: NiimbotConnection): Promise<void> 
   }
 }
 
-export type PrintProgress = { page: number; total: number; percent: number };
-
-export async function printLabels(
+/** 작업 목록을 한 번의 인쇄로 보낸다. 장수 합이 총 페이지 수. */
+export async function printJobs(
   conn: NiimbotConnection,
-  pages: LabelPage[],
+  jobs: PrintJob[],
   options: { density: number; onProgress?: (p: PrintProgress) => void },
 ): Promise<void> {
-  if (pages.length === 0) return;
+  const total = jobs.reduce((n, j) => n + j.quantity, 0);
+  if (total === 0) return;
   const lib = await loadLib();
   const { client, profile } = conn;
-
-  const dpi = profile.dpi;
-  const widthPx = Math.min(
-    profile.printheadPixels,
-    Math.round((LABEL.widthMm / 25.4) * dpi),
-  );
-  const heightPx = Math.round((LABEL.heightMm / 25.4) * dpi);
-  const fontFamily = labelFontFamily();
-  await ensureFontsLoaded(fontFamily);
 
   const density = Math.min(
     profile.densityMax,
     Math.max(profile.densityMin, Math.round(options.density)),
   );
   const task = client.protocol.newPrintTask(conn.taskType, {
-    totalPages: pages.length,
+    totalPages: total,
     labelType: lib.LabelType.WithGaps,
     density,
     statusPollIntervalMs: 100,
@@ -120,45 +175,71 @@ export async function printLabels(
   });
 
   const report = (page: number, percent: number) =>
-    options.onProgress?.({ page, total: pages.length, percent });
+    options.onProgress?.({ page, total, percent });
   const onProgress = (e: PrintProgressEvent) =>
     report(
-      Math.min(pages.length, e.page + 1),
+      Math.min(total, e.page + 1),
       Math.round((e.pagePrintProgress + e.pageFeedProgress) / 2),
     );
   client.on("printprogress", onProgress);
 
+  let done = 0;
   try {
     await task.printInit();
-    for (let i = 0; i < pages.length; i++) {
-      report(i + 1, 0);
-      let canvas = renderLabelCanvas(pages[i], {
-        dpi,
-        widthPx,
-        heightPx,
-        labelWidthMm: LABEL.widthMm,
-        labelHeightMm: LABEL.heightMm,
-        fontFamily,
-      });
-      if (profile.printDirection === "left") canvas = rotateForLeftFeed(canvas);
+    for (const job of jobs) {
+      report(done + 1, 0);
+      const canvas =
+        profile.printDirection === "left"
+          ? rotateForLeftFeed(job.canvas)
+          : job.canvas;
       const encoded = lib.ImageEncoder.encodeCanvas(
         canvas,
         lib.PageColorType.SingleColor,
         profile.printDirection,
       );
-      await task.printPage(encoded, 1);
+      await task.printPage(encoded, job.quantity);
       await task.waitForPageFinished();
+      done += job.quantity;
     }
     await task.waitForFinished();
-    report(pages.length, 100);
+    report(total, 100);
   } finally {
     client.off("printprogress", onProgress);
     await task.printEnd().catch(() => undefined);
   }
 }
 
+/** 접종 안내 라벨: 페이지마다 1장 */
+export async function buildScheduleJobs(
+  pages: LabelPage[],
+  profile: PrinterProfile,
+): Promise<PrintJob[]> {
+  const size = canvasSizeFor(profile);
+  const fontFamily = labelFontFamily();
+  await ensureFontsLoaded(fontFamily);
+  return pages.map((page) => ({
+    canvas: renderLabelCanvas(page, { ...size, fontFamily }),
+    quantity: 1,
+  }));
+}
+
+/** 텍스트 라벨: 같은 문구를 copies 장 */
+export async function buildTextJob(
+  text: string,
+  align: TextAlign,
+  copies: number,
+  profile: PrinterProfile,
+): Promise<PrintJob[]> {
+  if (text.trim() === "" || copies < 1) return [];
+  const size = canvasSizeFor(profile);
+  const fontFamily = labelFontFamily();
+  await ensureFontsLoaded(fontFamily);
+  const { canvas } = renderTextLabelCanvas({ ...size, fontFamily, text, align });
+  return [{ canvas, quantity: Math.round(copies) }];
+}
+
 /** 화면과 같은 글꼴(next/font의 IBM Plex Sans KR)을 캔버스에서도 쓴다. */
-function labelFontFamily(): string {
+export function labelFontFamily(): string {
   const fromCss = getComputedStyle(document.documentElement)
     .getPropertyValue("--font-plex-sans")
     .trim();
@@ -167,7 +248,7 @@ function labelFontFamily(): string {
     : '"IBM Plex Sans KR", sans-serif';
 }
 
-async function ensureFontsLoaded(fontFamily: string): Promise<void> {
+export async function ensureFontsLoaded(fontFamily: string): Promise<void> {
   const first = fontFamily.split(",")[0].trim().replace(/^['"]|['"]$/g, "");
   const sample = "예방접종 안내 2026.01.01 (월) DTaP";
   try {
@@ -188,8 +269,8 @@ export function describeNiimbotError(error: unknown): string {
   const message = e?.message ?? String(error);
   switch (e?.name) {
     case "NotFoundError":
-      // 선택 창에서 취소했거나, 선택 창이 아예 뜨지 않는 환경(앱 안의 미리보기 창 등)
-      return "포트를 고르지 않았거나 이 창에서는 포트 선택 창이 열리지 않습니다. Chrome 또는 Edge 브라우저에서 이 주소를 직접 열고, 연결 창에서 'USB 직렬 장치 (COMx)'를 선택한 뒤 '연결'을 누르세요.";
+      // 선택 창에서 고르지 않고 닫았을 때
+      return "포트를 고르지 않았습니다. 다시 누른 뒤 연결 창에서 'USB 직렬 장치 (COMx)'를 선택하고 '연결'을 누르세요.";
     case "SecurityError":
       return "브라우저가 포트 접근을 막았습니다. 버튼을 직접 눌러 연결해 주세요.";
     case "NetworkError":
@@ -197,7 +278,7 @@ export function describeNiimbotError(error: unknown): string {
       return "포트를 열 수 없습니다. NIIMBOT 앱 등 다른 프로그램이 프린터를 쓰고 있는지 확인하세요.";
   }
   if (/timeout|time out/i.test(message)) {
-    return "프린터가 응답하지 않습니다. 전원과 USB 연결을 확인한 뒤 다시 연결하세요.";
+    return "프린터가 응답하지 않습니다. 전원이 켜져 있는지, USB가 꽂혀 있는지 확인한 뒤 다시 연결하세요.";
   }
   if (typeof e?.reasonId === "number") {
     return `프린터 오류 (${message}). 라벨·리본이 정품인지, 덮개가 닫혔는지 확인하세요.`;
@@ -207,6 +288,10 @@ export function describeNiimbotError(error: unknown): string {
 
 // 개발 중 실제 프린터 테스트용: 렌더 결과를 콘솔/스크립트에서 꺼내 볼 수 있게 한다.
 if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
-  (window as unknown as { __renderLabelCanvas?: typeof renderLabelCanvas }).__renderLabelCanvas =
-    renderLabelCanvas;
+  const w = window as unknown as {
+    __renderLabelCanvas?: typeof renderLabelCanvas;
+    __renderTextLabelCanvas?: typeof renderTextLabelCanvas;
+  };
+  w.__renderLabelCanvas = renderLabelCanvas;
+  w.__renderTextLabelCanvas = renderTextLabelCanvas;
 }
