@@ -225,7 +225,7 @@ export function NiimbotPrint({ pages }: { pages: LabelPage[] }) {
             <p className="text-xs text-ink-muted">
               {status.kind === "idle" && status.notice
                 ? status.notice
-                : "USB를 꽂고 누른 뒤, 목록에서 프린터의 COM 포트를 고르세요."}
+                : "프린터를 켜고 USB를 꽂은 뒤 누르면 포트 선택 창이 뜹니다. 'USB 직렬 장치 (COMx)'를 고르세요. 창이 안 뜨면 Chrome/Edge에서 이 주소를 직접 여세요."}
             </p>
           )}
         </div>

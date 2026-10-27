@@ -188,7 +188,8 @@ export function describeNiimbotError(error: unknown): string {
   const message = e?.message ?? String(error);
   switch (e?.name) {
     case "NotFoundError":
-      return "포트를 선택하지 않았습니다. 다시 연결을 눌러 프린터의 COM 포트를 고르세요.";
+      // 선택 창에서 취소했거나, 선택 창이 아예 뜨지 않는 환경(앱 안의 미리보기 창 등)
+      return "포트를 고르지 않았거나 이 창에서는 포트 선택 창이 열리지 않습니다. Chrome 또는 Edge 브라우저에서 이 주소를 직접 열고, 연결 창에서 'USB 직렬 장치 (COMx)'를 선택한 뒤 '연결'을 누르세요.";
     case "SecurityError":
       return "브라우저가 포트 접근을 막았습니다. 버튼을 직접 눌러 연결해 주세요.";
     case "NetworkError":
