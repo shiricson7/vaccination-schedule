@@ -53,32 +53,81 @@ const noSubscribe = () => () => {};
 const getSupported = () => isWebSerialSupported() && !isEmbeddedBrowser();
 const getEmbedded = () => isWebSerialSupported() && isEmbeddedBrowser();
 
+/** 같은 사이트의 다른 탭과 포트 소유권을 나누는 Web Locks 이름 */
+const PORT_LOCK = "niimbot-serial-port";
+const OTHER_TAB_MESSAGE =
+  "이 앱이 열린 다른 탭이 프린터에 연결되어 있습니다. 프린터는 한 탭에서만 쓸 수 있으니 그 탭을 닫거나 거기서 연결 해제한 뒤 다시 시도하세요.";
+
 /*
- * 연결은 페이지에 하나뿐이므로 모듈 싱글턴으로 둔다. 컴포넌트가 다시 마운트되거나
- * (개발 모드 StrictMode의 이중 마운트 등) 리렌더돼도 포트를 끊거나 두 번 열지 않는다.
- * 페이지를 닫으면 브라우저가 포트를 닫는다.
+ * 연결은 페이지에 하나뿐이므로 공유 상태로 둔다. 모듈이 아니라 globalThis에 두는 이유는
+ * 개발 서버의 코드 갱신(HMR)으로 모듈이 다시 실행돼도 이미 열린 포트를 잃지 않기 위해서다.
+ * 컴포넌트가 다시 마운트되거나(StrictMode 이중 마운트) 리렌더돼도 포트를 끊거나 두 번
+ * 열지 않는다. 페이지를 닫으면 브라우저가 포트와 잠금을 정리한다.
  */
-const connection = {
-  current: null as NiimbotConnection | null,
-  listeners: new Set<() => void>(),
+type Shared = {
+  connection: NiimbotConnection | null;
+  listeners: Set<() => void>;
+  /** 진행 중인 연결 시도. 겹치는 요청은 같은 시도를 기다린다. */
+  pending: Promise<NiimbotConnection> | null;
+  /** 페이지당 자동 연결은 한 번만 시도한다. */
+  autoConnectTried: boolean;
+  /** 잡고 있는 탭 간 잠금을 푸는 함수 */
+  releaseLock: (() => void) | null;
 };
+
+const shared: Shared = ((globalThis as { __niimbotShared?: Shared }).__niimbotShared ??= {
+  connection: null,
+  listeners: new Set(),
+  pending: null,
+  autoConnectTried: false,
+  releaseLock: null,
+});
+
 function setConnection(conn: NiimbotConnection | null) {
-  connection.current = conn;
-  connection.listeners.forEach((listener) => listener());
+  shared.connection = conn;
+  shared.listeners.forEach((listener) => listener());
 }
 function subscribeConnection(listener: () => void) {
-  connection.listeners.add(listener);
+  shared.listeners.add(listener);
   return () => {
-    connection.listeners.delete(listener);
+    shared.listeners.delete(listener);
   };
 }
-const getConnection = () => connection.current;
+const getConnection = () => shared.connection;
 const getNoConnection = () => null;
 
-/** 진행 중인 연결 시도. 겹치는 요청은 같은 시도를 기다린다. */
-let pendingConnect: Promise<NiimbotConnection> | null = null;
-/** 페이지당 자동 연결은 한 번만 시도한다. */
-let autoConnectTried = false;
+/**
+ * 같은 사이트의 다른 탭이 프린터를 쓰고 있지 않을 때만 잠금을 잡는다.
+ * Web Locks가 없는 브라우저에서는 그냥 진행한다.
+ */
+function acquirePortLock(): Promise<boolean> {
+  if (shared.releaseLock) return Promise.resolve(true);
+  if (typeof navigator === "undefined" || !("locks" in navigator)) {
+    return Promise.resolve(true);
+  }
+  return new Promise<boolean>((resolve) => {
+    void navigator.locks
+      .request(PORT_LOCK, { ifAvailable: true }, (lock) => {
+        if (!lock) {
+          resolve(false);
+          return;
+        }
+        // 이 프로미스가 끝날 때까지 잠금이 유지된다.
+        return new Promise<void>((release) => {
+          shared.releaseLock = () => {
+            shared.releaseLock = null;
+            release();
+          };
+          resolve(true);
+        });
+      })
+      .catch(() => resolve(true));
+  });
+}
+
+function releasePortLock() {
+  shared.releaseLock?.();
+}
 
 function connectedStatus(conn: NiimbotConnection): NiimbotStatus {
   return {
@@ -95,36 +144,47 @@ export function useNiimbot(): UseNiimbot {
   const supported = useSyncExternalStore(noSubscribe, getSupported, () => false);
   const embedded = useSyncExternalStore(noSubscribe, getEmbedded, () => false);
   const conn = useSyncExternalStore(subscribeConnection, getConnection, getNoConnection);
-  const [status, setStatus] = useState<NiimbotStatus>({ kind: "idle" });
+  const [status, setStatus] = useState<NiimbotStatus>(() =>
+    shared.connection ? connectedStatus(shared.connection) : { kind: "idle" },
+  );
   const [density, setDensity] = useStoredState(
     STORAGE_KEYS.niimbotDensity,
     DEFAULT_DENSITY,
     parseDensity,
   );
 
-  /** 포트를 연다. 이미 연결돼 있으면 그 연결을, 진행 중이면 그 시도를 돌려준다. */
+  /**
+   * 포트를 연다. 이미 연결돼 있으면 그 연결을, 진행 중이면 그 시도를 돌려준다.
+   * 다른 탭이 프린터를 쓰고 있으면 OTHER_TAB_MESSAGE 오류를 던진다.
+   */
   const open = useCallback((port?: SerialPort) => {
-    if (connection.current) return Promise.resolve(connection.current);
-    pendingConnect ??= connectNiimbot(() => {
-      // 프린터 쪽에서 끊김 (USB 뽑힘, 전원 꺼짐)
-      if (connection.current) {
-        setConnection(null);
-        setStatus({ kind: "idle", notice: "프린터 연결이 끊어졌습니다." });
-      }
-    }, port)
-      .then((c) => {
+    if (shared.connection) return Promise.resolve(shared.connection);
+    shared.pending ??= (async () => {
+      if (!(await acquirePortLock())) throw new Error(OTHER_TAB_MESSAGE);
+      try {
+        const c = await connectNiimbot(() => {
+          // 프린터 쪽에서 끊김 (USB 뽑힘, 전원 꺼짐)
+          if (shared.connection) {
+            setConnection(null);
+            releasePortLock();
+            setStatus({ kind: "idle", notice: "프린터 연결이 끊어졌습니다." });
+          }
+        }, port);
         setConnection(c);
         return c;
-      })
-      .finally(() => {
-        pendingConnect = null;
-      });
-    return pendingConnect;
+      } catch (error) {
+        releasePortLock();
+        throw error;
+      }
+    })().finally(() => {
+      shared.pending = null;
+    });
+    return shared.pending;
   }, []);
 
   const connect = useCallback(
     async (options?: { chooser?: boolean }) => {
-      if (connection.current) return;
+      if (shared.connection) return;
       setStatus({ kind: "connecting" });
       try {
         const port = options?.chooser ? null : await findAuthorizedPort();
@@ -138,8 +198,8 @@ export function useNiimbot(): UseNiimbot {
 
   // 페이지를 열 때 이미 허용된 NIIMBOT 포트가 있으면 조용히 연결한다.
   useEffect(() => {
-    if (!supported || autoConnectTried || connection.current) return;
-    autoConnectTried = true;
+    if (!supported || shared.autoConnectTried || shared.connection) return;
+    shared.autoConnectTried = true;
     void (async () => {
       const port = await findAuthorizedPort();
       if (!port) return;
@@ -147,24 +207,29 @@ export function useNiimbot(): UseNiimbot {
       try {
         setStatus(connectedStatus(await open(port)));
       } catch (error) {
+        const message = describeNiimbotError(error);
         setStatus({
           kind: "idle",
-          notice: `자동 연결에 실패했습니다. ${describeNiimbotError(error)}`,
+          notice:
+            message === OTHER_TAB_MESSAGE
+              ? "다른 탭이 프린터를 쓰고 있어 이 탭에서는 연결하지 않았습니다."
+              : `자동 연결에 실패했습니다. ${message}`,
         });
       }
     })();
   }, [supported, open]);
 
   const disconnect = useCallback(async () => {
-    const current = connection.current;
+    const current = shared.connection;
     setConnection(null);
     if (current) await disconnectNiimbot(current);
+    releasePortLock();
     setStatus({ kind: "idle" });
   }, []);
 
   const print = useCallback(
     async (jobs: JobsFactory) => {
-      const current = connection.current;
+      const current = shared.connection;
       if (!current) return;
       setStatus({ kind: "printing", page: 1, total: 0, percent: 0 });
       try {
@@ -182,7 +247,10 @@ export function useNiimbot(): UseNiimbot {
         });
         setStatus({ kind: "connected", notice: `라벨 ${total}장을 보냈습니다.` });
       } catch (error) {
-        if (!current.client.isConnected()) setConnection(null);
+        if (!current.client.isConnected()) {
+          setConnection(null);
+          releasePortLock();
+        }
         setStatus({ kind: "error", message: describeNiimbotError(error) });
       }
     },
