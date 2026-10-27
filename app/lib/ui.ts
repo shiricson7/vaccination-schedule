@@ -13,8 +13,3 @@ export const btnGhost = cx(
   btn,
   "h-10 px-3 text-ink-muted hover:bg-surface-2 hover:text-ink",
 );
-
-export const btnSecondary = cx(
-  btn,
-  "h-10 border border-line bg-surface px-4 text-ink hover:border-line-strong hover:bg-surface-2",
-);
