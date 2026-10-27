@@ -13,6 +13,28 @@ export function weekdayOf(iso: string): string | null {
   return d ? WEEKDAYS[d.getDay()] : null;
 }
 
+/** 로컬 Date → "YYYY-MM-DD" */
+export function toISODate(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** 오늘 (로컬) */
+export function todayISO(): string {
+  return toISODate(new Date());
+}
+
+/**
+ * n개월 뒤 날짜. 1월 31일 + 1개월처럼 그 달에 없는 날이면 그 달의 마지막 날로 맞춘다.
+ */
+export function addMonthsISO(base: Date, months: number): string {
+  const target = new Date(base.getFullYear(), base.getMonth() + months, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(base.getDate(), lastDay));
+  return toISODate(target);
+}
+
 /** 라벨용 표기: "2026.11.15 (일)" */
 export function formatLabelDate(iso: string): string {
   const d = parseISODate(iso);

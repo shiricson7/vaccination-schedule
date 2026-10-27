@@ -3,9 +3,17 @@
 import { CalendarPlus } from "lucide-react";
 import type { FormEvent } from "react";
 import { cx } from "../lib/cx";
-import { weekdayOf } from "../lib/date";
+import { addMonthsISO, formatLabelDate, weekdayOf } from "../lib/date";
 import type { Schedule } from "../lib/labels";
 import { btnPrimary } from "../lib/ui";
+
+/** 오늘 기준 빠른 추가 버튼 */
+const QUICK_OFFSETS: { months: number; label: string }[] = [
+  { months: 1, label: "1개월 뒤" },
+  { months: 2, label: "2개월 뒤" },
+  { months: 6, label: "6개월 뒤" },
+  { months: 12, label: "1년 뒤" },
+];
 
 type Props = {
   schedules: Schedule[];
@@ -15,6 +23,8 @@ type Props = {
   error: string | null;
   onDateInputChange: (value: string) => void;
   onAdd: (e: FormEvent) => void;
+  /** 오늘부터 n개월 뒤 날짜를 바로 추가 */
+  onQuickAdd: (months: number) => void;
   onSelect: (date: string) => void;
 };
 
@@ -27,8 +37,11 @@ export function DateSidebar({
   error,
   onDateInputChange,
   onAdd,
+  onQuickAdd,
   onSelect,
 }: Props) {
+  const today = new Date();
+
   return (
     <div className="flex flex-col gap-5 p-4">
       <form onSubmit={onAdd} noValidate className="flex flex-col gap-2">
@@ -53,6 +66,26 @@ export function DateSidebar({
           >
             <CalendarPlus className="size-4" />
           </button>
+        </div>
+        <div
+          role="group"
+          aria-label="오늘 기준으로 빠르게 추가"
+          className="grid grid-cols-4 gap-1.5 lg:grid-cols-2"
+        >
+          {QUICK_OFFSETS.map(({ months, label }) => {
+            const iso = addMonthsISO(today, months);
+            return (
+              <button
+                key={months}
+                type="button"
+                onClick={() => onQuickAdd(months)}
+                title={`${formatLabelDate(iso)} 추가`}
+                className="h-8 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface-2"
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
         {error && (
           <p id="date-error" role="alert" className="text-xs text-danger">
