@@ -9,6 +9,11 @@ NIIMBOT 라벨 프린터(M2_H)로 50 × 30 mm 라벨을 바로 출력하는 신�
 - 출력은 USB로 연결한 NIIMBOT에 브라우저에서 직접 보냅니다. Windows 프린터 드라이버나
   인쇄 대화상자는 쓰지 않습니다.
 
+## 배포 주소
+
+Vercel 프로젝트 `vaccination-schedule-cj3j`에 배포됩니다: <https://vaccination-schedule-cj3j.vercel.app>
+(`main`에 푸시하면 자동 배포). 프린터 연결은 Chrome/Edge에서 이 주소를 열어 씁니다.
+
 ## 실행
 
 ```bash
