@@ -1,26 +1,286 @@
 @import "tailwindcss";
 
+/*
+  디자인 토큰 — B 구성(콘솔/벤토) + C 컬러(소프트 페디아트릭)
+  피치빛 웜 화이트 바탕, 흰 패널, 선택은 민트, 주요 동작은 코랄. 라이트 전용.
+*/
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --canvas: #fff7f1;
+  --surface: #ffffff;
+  --surface-2: #fff1e8;
+  --line: #f0e4db;
+  --line-strong: #dcc9bb;
+  --ink: #2b2622;
+  --ink-muted: #7a6f68;
+  --ink-faint: #a89d95;
+  --accent: #ff7a5c;
+  --accent-strong: #e8653f;
+  --accent-soft: #ffe9dc;
+  --accent-fg: #ffffff;
+  --mint: #e3f6ef;
+  --mint-strong: #7fd3b5;
+  --mint-ink: #1f6b53;
+  --butter: #fff4d6;
+  --danger: #c4452d;
+  --danger-soft: #fde8e3;
+  color-scheme: light;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-mint: var(--mint);
+  --color-mint-strong: var(--mint-strong);
+  --color-mint-ink: var(--mint-ink);
+  --color-butter: var(--butter);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans:
+    var(--font-plex-sans), "IBM Plex Sans KR", "Apple SD Gothic Neo",
+    "Malgun Gothic", system-ui, sans-serif;
+  --font-mono:
+    var(--font-plex-mono), "IBM Plex Mono", ui-monospace, SFMono-Regular,
+    Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+  }
+
+  ::selection {
+    background: var(--mint);
+    color: var(--ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0.65;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* 작은 대문자 느낌의 섹션 라벨 */
+  .eyebrow {
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+
+  /* 날짜 타임라인 (데스크톱에서만 세로 레일) */
+  .timeline-dot {
+    position: absolute;
+    left: 0.6875rem;
+    top: 1.0625rem;
+    width: 0.5625rem;
+    height: 0.5625rem;
+    border-radius: 9999px;
+    background: var(--line-strong);
+  }
+
+  [aria-current="true"] > .timeline-dot {
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  @media (min-width: 64rem) {
+    .timeline {
+      position: relative;
+    }
+
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 0.9375rem;
+      top: 1.25rem;
+      bottom: 1.25rem;
+      width: 1px;
+      background: var(--line-strong);
+    }
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────
+   라벨 (50 × 30 mm)
+   미리보기·측정·인쇄가 모두 같은 규칙을 쓴다. 항상 흰 바탕에 검정 글씨.
+   단위는 mm/pt — 화면과 인쇄에서 동일한 절대 단위.
+   ─────────────────────────────────────────────────────────────── */
+.label {
+  --label-w: 50mm;
+  --label-h: 30mm;
+  box-sizing: border-box;
+  width: var(--label-w);
+  height: var(--label-h);
+  padding: 2mm 2.2mm 1.5mm;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  color: #000;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: auto;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.label-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1.5mm;
+  font-size: 6pt;
+  line-height: 1.2;
+  font-weight: 500;
+  color: #222;
+  white-space: nowrap;
+}
+
+.label-page {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.label-date {
+  margin-top: 0.3mm;
+  font-size: 10pt;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.label-rule {
+  flex: none;
+  height: 0;
+  border-top: 0.25mm solid #000;
+  margin: 0.8mm 0 0.9mm;
+}
+
+.label-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  row-gap: 0.5mm;
+  overflow: hidden;
+}
+
+.label-item {
+  display: flex;
+  align-items: flex-start;
+  column-gap: 1mm;
+  font-size: 8pt;
+  line-height: 1.3;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+/* 접종 후 체크할 수 있는 작은 네모 */
+.label-item::before {
+  content: "";
+  flex: none;
+  box-sizing: border-box;
+  width: 1.9mm;
+  height: 1.9mm;
+  margin-top: 0.75mm;
+  border: 0.25mm solid #000;
+  border-radius: 0.3mm;
+}
+
+/* 측정 전용 라벨: 화면 밖에 두되 레이아웃은 계산되게 */
+.label-measure {
+  position: fixed;
+  top: 0;
+  inset-inline-start: -200vw;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* 미리보기 프레임: 라벨을 transform으로 확대하되 줄바꿈은 원본과 동일 */
+.label-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 2px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgb(43 38 34 / 0.08),
+    0 1px 3px rgb(43 38 34 / 0.12);
+}
+
+.label-frame > .label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}
+
+/* ───────────────────────────────────────────────────────────────
+   인쇄: 라벨 1장 = 페이지 1장 (50 × 30 mm, 여백 0)
+   ─────────────────────────────────────────────────────────────── */
+@page {
+  size: 50mm 30mm;
+  margin: 0;
+}
+
+@media print {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .app-shell,
+  .label-measure {
+    display: none !important;
+  }
+
+  .print-root {
+    display: block !important;
+  }
+
+  .print-root .label {
+    /* 페이지 높이와 정확히 같으면 반올림 오차로 빈 페이지가 생길 수 있어 살짝 줄인다 */
+    --label-h: 29.9mm;
+    break-after: page;
+    break-inside: avoid;
+    page-break-after: always;
+    page-break-inside: avoid;
+  }
+
+  .print-root .label:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
 }
