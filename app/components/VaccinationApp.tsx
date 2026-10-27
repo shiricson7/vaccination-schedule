@@ -329,7 +329,9 @@ export function VaccinationApp() {
               disabled={niimbotButtonDisabled(niimbot, jobCount)}
               title={
                 !niimbot.supported
-                  ? "Chrome 또는 Edge에서 열어야 출력할 수 있습니다"
+                  ? niimbot.embedded
+                    ? "이 미리보기 창에서는 연결할 수 없습니다. Chrome 또는 Edge에서 여세요"
+                    : "Chrome 또는 Edge에서 열어야 출력할 수 있습니다"
                   : niimbot.profile && jobCount === 0
                     ? mode === "schedule"
                       ? "백신을 선택하면 출력할 수 있습니다"

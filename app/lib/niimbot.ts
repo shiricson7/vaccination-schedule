@@ -1,3 +1,7 @@
+// Web Serial API 타입(SerialPort, navigator.serial). TypeScript 6부터 @types가 자동으로
+// 포함되지 않아 여기서 참조한다. 삼중 슬래시 지시문은 파일 맨 위에 있어야 하며
+// 프로그램 전체에 전역으로 적용된다.
+/// <reference types="w3c-web-serial" />
 "use client";
 
 import {
@@ -25,6 +29,37 @@ function loadLib(): Promise<Lib> {
 
 export function isWebSerialSupported(): boolean {
   return typeof navigator !== "undefined" && "serial" in navigator;
+}
+
+/**
+ * Claude 앱의 미리보기 창 같은 임베디드 브라우저. Web Serial API는 있지만
+ * 포트 선택 창을 띄울 수 없어 연결이 항상 실패한다.
+ */
+export function isEmbeddedBrowser(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    /\b(Claude|Electron)\//.test(navigator.userAgent)
+  );
+}
+
+/** NIIMBOT 프린터의 USB 제조사 ID */
+const NIIMBOT_VENDOR_ID = 0x3513;
+
+/**
+ * 이 사이트에 이미 허용된 포트 중 NIIMBOT을 찾는다. 선택 창 없이 바로 열 수 있다.
+ * NIIMBOT이 없고 허용된 포트가 하나뿐이면 그 포트를 쓴다.
+ */
+export async function findAuthorizedPort(): Promise<SerialPort | null> {
+  if (!isWebSerialSupported()) return null;
+  try {
+    const ports = await navigator.serial.getPorts();
+    const niimbot = ports.find(
+      (p) => p.getInfo().usbVendorId === NIIMBOT_VENDOR_ID,
+    );
+    return niimbot ?? (ports.length === 1 ? ports[0] : null);
+  } catch {
+    return null;
+  }
 }
 
 export type PrinterProfile = {
@@ -77,14 +112,18 @@ export function canvasSizeFor(profile: PrinterProfile) {
   };
 }
 
-/** 포트 선택 대화상자를 띄우므로 반드시 클릭 핸들러 안에서 불러야 한다. */
+/**
+ * 프린터에 연결한다. `port`를 주면(이미 허용된 포트) 선택 창 없이 바로 열고,
+ * 없으면 포트 선택 창을 띄우므로 그때는 반드시 클릭 핸들러 안에서 불러야 한다.
+ */
 export async function connectNiimbot(
   onDisconnect: () => void,
+  port?: SerialPort,
 ): Promise<NiimbotConnection> {
   const lib = await loadLib();
   const client = new lib.NiimbotSerialClient();
   client.on("disconnect", onDisconnect);
-  await client.connect();
+  await client.connect(port ? { authorizedPort: port } : undefined);
 
   const meta = client.getModelMetadata();
   const profile: PrinterProfile = meta
@@ -230,8 +269,8 @@ export function describeNiimbotError(error: unknown): string {
   const message = e?.message ?? String(error);
   switch (e?.name) {
     case "NotFoundError":
-      // 선택 창에서 취소했거나, 선택 창이 아예 뜨지 않는 환경(앱 안의 미리보기 창 등)
-      return "포트를 고르지 않았거나 이 창에서는 포트 선택 창이 열리지 않습니다. Chrome 또는 Edge 브라우저에서 이 주소를 직접 열고, 연결 창에서 'USB 직렬 장치 (COMx)'를 선택한 뒤 '연결'을 누르세요.";
+      // 선택 창에서 고르지 않고 닫았을 때
+      return "포트를 고르지 않았습니다. 다시 누른 뒤 연결 창에서 'USB 직렬 장치 (COMx)'를 선택하고 '연결'을 누르세요.";
     case "SecurityError":
       return "브라우저가 포트 접근을 막았습니다. 버튼을 직접 눌러 연결해 주세요.";
     case "NetworkError":

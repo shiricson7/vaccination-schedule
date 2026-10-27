@@ -1,6 +1,7 @@
 "use client";
 
 import { Cable, LoaderCircle, Printer, Unplug } from "lucide-react";
+import { useSyncExternalStore } from "react";
 import type { UseNiimbot } from "../hooks/useNiimbot";
 import { cx } from "../lib/cx";
 import { btnGhost, btnPrimary } from "../lib/ui";
@@ -24,7 +25,6 @@ export function niimbotButtonLabel(niimbot: UseNiimbot, jobCount: number): strin
   return jobCount > 0 ? `NIIMBOT로 ${jobCount}장 출력` : "출력할 라벨 없음";
 }
 
-/** 주 버튼을 눌렀을 때 할 일: 연결 전이면 연결, 연결됐으면 출력 */
 export function niimbotButtonDisabled(niimbot: UseNiimbot, jobCount: number): boolean {
   return (
     !niimbot.supported ||
@@ -33,9 +33,13 @@ export function niimbotButtonDisabled(niimbot: UseNiimbot, jobCount: number): bo
   );
 }
 
+const noSubscribe = () => () => {};
+const getOrigin = () => window.location.origin;
+
 /** 프린터 트레이 아래쪽: 연결 상태, 진하기, 진행률, 오류 */
 export function NiimbotPanel({ niimbot, jobCount, onPrint, onConnect }: Props) {
-  const { supported, status, profile, busy, density, setDensity } = niimbot;
+  const { supported, embedded, status, profile, busy, density, setDensity } = niimbot;
+  const origin = useSyncExternalStore(noSubscribe, getOrigin, () => "");
 
   return (
     <section aria-labelledby="niimbot-heading" className="border-t border-line p-4">
@@ -55,7 +59,15 @@ export function NiimbotPanel({ niimbot, jobCount, onPrint, onConnect }: Props) {
 
       {!supported ? (
         <p className="mt-2 text-xs text-ink-muted">
-          Chrome 또는 Edge에서 이 주소를 열어야 USB로 연결한 NIIMBOT에 출력할 수 있습니다.
+          {embedded ? (
+            <>
+              이 미리보기 창에서는 USB 포트 선택 창이 열리지 않아 연결할 수 없습니다. Chrome 또는
+              Edge에서 <span className="font-mono text-ink">{origin || "이 주소"}</span> 를
+              여세요.
+            </>
+          ) : (
+            "Chrome 또는 Edge에서 이 주소를 열어야 USB로 연결한 NIIMBOT에 출력할 수 있습니다."
+          )}
         </p>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
@@ -139,9 +151,18 @@ export function NiimbotPanel({ niimbot, jobCount, onPrint, onConnect }: Props) {
           )}
           {!profile && status.kind === "idle" && !status.notice && (
             <p className="text-xs text-ink-muted">
-              프린터를 켜고 USB를 꽂은 뒤 누르면 포트 선택 창이 뜹니다. &apos;USB 직렬 장치
-              (COMx)&apos;를 고르세요. 창이 안 뜨면 Chrome/Edge에서 이 주소를 직접 여세요.
+              프린터를 켜고 USB를 꽂은 뒤 누르세요. 한 번 허용한 프린터는 다음부터 페이지를
+              열 때 자동으로 연결됩니다.
             </p>
+          )}
+          {!profile && !busy && (
+            <button
+              type="button"
+              onClick={() => void niimbot.connect({ chooser: true })}
+              className="self-start text-xs text-ink-muted underline underline-offset-2 transition-colors hover:text-ink"
+            >
+              다른 포트 선택…
+            </button>
           )}
         </div>
       )}
