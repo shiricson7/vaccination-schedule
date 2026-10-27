@@ -273,9 +273,10 @@ export function describeNiimbotError(error: unknown): string {
       return "포트를 고르지 않았습니다. 다시 누른 뒤 연결 창에서 'USB 직렬 장치 (COMx)'를 선택하고 '연결'을 누르세요.";
     case "SecurityError":
       return "브라우저가 포트 접근을 막았습니다. 버튼을 직접 눌러 연결해 주세요.";
-    case "NetworkError":
     case "InvalidStateError":
-      return "포트를 열 수 없습니다. NIIMBOT 앱 등 다른 프로그램이 프린터를 쓰고 있는지 확인하세요.";
+      return "포트가 이미 열려 있습니다. 이 앱이 열린 다른 탭이나 창을 닫은 뒤 페이지를 새로 고치고 다시 연결하세요.";
+    case "NetworkError":
+      return "포트를 열 수 없습니다. ① 이 앱이 다른 탭(예: 로컬 주소와 배포 주소를 같이 열어 둔 경우)에 열려 있으면 그 탭을 닫고, ② NIIMBOT 앱 등 다른 프로그램이 프린터를 쓰고 있으면 끝내고, ③ 프린터 전원과 USB를 확인한 뒤 다시 연결하세요.";
   }
   if (/timeout|time out/i.test(message)) {
     return "프린터가 응답하지 않습니다. 전원이 켜져 있는지, USB가 꽂혀 있는지 확인한 뒤 다시 연결하세요.";
