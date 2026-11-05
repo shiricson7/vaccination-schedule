@@ -5,7 +5,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { useNiimbot } from "../hooks/useNiimbot";
 import { useTextLabelRender } from "../hooks/useTextLabelRender";
 import { cx } from "../lib/cx";
-import { addMonthsISO, formatLabelDate } from "../lib/date";
+import { addOffsetISO, formatLabelDate, type DateOffset } from "../lib/date";
 import type { TextAlign } from "../lib/labelCanvas";
 import { paginateLabels, type Schedule } from "../lib/labels";
 import { buildScheduleJobs, buildTextJob } from "../lib/niimbot";
@@ -135,9 +135,9 @@ export function VaccinationApp() {
     setError(null);
   };
 
-  /** 오늘부터 n개월 뒤를 바로 추가하고 선택한다. 이미 있으면 그 날짜를 선택만 한다. */
-  const quickAdd = (months: number) => {
-    const date = addMonthsISO(new Date(), months);
+  /** 오늘부터 일정 기간 뒤를 바로 추가하고 선택한다. 이미 있으면 그 날짜를 선택만 한다. */
+  const quickAdd = (offset: DateOffset) => {
+    const date = addOffsetISO(new Date(), offset);
     setSelectedDate(date);
     setDateInput("");
     if (schedules.some((s) => s.date === date)) {

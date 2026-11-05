@@ -35,6 +35,18 @@ export function addMonthsISO(base: Date, months: number): string {
   return toISODate(target);
 }
 
+/** n일 뒤 날짜. 월·연도 넘김은 Date 생성자가 처리한다. */
+export function addDaysISO(base: Date, days: number): string {
+  return toISODate(new Date(base.getFullYear(), base.getMonth(), base.getDate() + days));
+}
+
+/** 빠른 추가 간격: n일 뒤 또는 n개월 뒤 */
+export type DateOffset = { days: number } | { months: number };
+
+export function addOffsetISO(base: Date, offset: DateOffset): string {
+  return "days" in offset ? addDaysISO(base, offset.days) : addMonthsISO(base, offset.months);
+}
+
 /** 라벨용 표기: "2026.11.15 (일)" */
 export function formatLabelDate(iso: string): string {
   const d = parseISODate(iso);
