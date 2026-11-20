@@ -3,16 +3,18 @@
 import { CalendarPlus } from "lucide-react";
 import type { FormEvent } from "react";
 import { cx } from "../lib/cx";
-import { addMonthsISO, formatLabelDate, weekdayOf } from "../lib/date";
+import { addOffsetISO, formatLabelDate, weekdayOf, type DateOffset } from "../lib/date";
 import type { Schedule } from "../lib/labels";
 import { btnPrimary } from "../lib/ui";
 
 /** 오늘 기준 빠른 추가 버튼 */
-const QUICK_OFFSETS: { months: number; label: string }[] = [
-  { months: 1, label: "1개월 뒤" },
-  { months: 2, label: "2개월 뒤" },
-  { months: 6, label: "6개월 뒤" },
-  { months: 12, label: "1년 뒤" },
+const QUICK_OFFSETS: { offset: DateOffset; label: string }[] = [
+  { offset: { days: 7 }, label: "1주 뒤" },
+  { offset: { days: 14 }, label: "2주 뒤" },
+  { offset: { months: 1 }, label: "1개월 뒤" },
+  { offset: { months: 2 }, label: "2개월 뒤" },
+  { offset: { months: 6 }, label: "6개월 뒤" },
+  { offset: { months: 12 }, label: "1년 뒤" },
 ];
 
 type Props = {
@@ -23,8 +25,8 @@ type Props = {
   error: string | null;
   onDateInputChange: (value: string) => void;
   onAdd: (e: FormEvent) => void;
-  /** 오늘부터 n개월 뒤 날짜를 바로 추가 */
-  onQuickAdd: (months: number) => void;
+  /** 오늘부터 일정 기간 뒤 날짜를 바로 추가 */
+  onQuickAdd: (offset: DateOffset) => void;
   onSelect: (date: string) => void;
 };
 
@@ -70,15 +72,15 @@ export function DateSidebar({
         <div
           role="group"
           aria-label="오늘 기준으로 빠르게 추가"
-          className="grid grid-cols-4 gap-1.5 lg:grid-cols-2"
+          className="grid grid-cols-3 gap-1.5 sm:grid-cols-6 lg:grid-cols-2"
         >
-          {QUICK_OFFSETS.map(({ months, label }) => {
-            const iso = addMonthsISO(today, months);
+          {QUICK_OFFSETS.map(({ offset, label }) => {
+            const iso = addOffsetISO(today, offset);
             return (
               <button
-                key={months}
+                key={label}
                 type="button"
-                onClick={() => onQuickAdd(months)}
+                onClick={() => onQuickAdd(offset)}
                 title={`${formatLabelDate(iso)} 추가`}
                 className="h-8 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface-2"
               >
