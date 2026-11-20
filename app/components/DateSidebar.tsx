@@ -7,13 +7,17 @@ import { addOffsetISO, formatLabelDate, weekdayOf, type DateOffset } from "../li
 import type { Schedule } from "../lib/labels";
 import { btnPrimary } from "../lib/ui";
 
-/** 오늘 기준 빠른 추가 버튼 */
+/**
+ * 오늘 기준 빠른 추가 버튼. 휴대폰 4열·태블릿 7열·PC 2열 그리드에서 마지막 버튼이
+ * 남는 칸을 채우도록(버튼의 last:col-span) 맞춰 두었으니, 개수를 바꾸면 그것도 함께 고친다.
+ */
 const QUICK_OFFSETS: { offset: DateOffset; label: string }[] = [
   { offset: { days: 7 }, label: "1주 뒤" },
   { offset: { days: 14 }, label: "2주 뒤" },
   { offset: { months: 1 }, label: "1개월 뒤" },
   { offset: { months: 2 }, label: "2개월 뒤" },
   { offset: { months: 6 }, label: "6개월 뒤" },
+  { offset: { months: 11 }, label: "11개월 뒤" },
   { offset: { months: 12 }, label: "1년 뒤" },
 ];
 
@@ -72,7 +76,7 @@ export function DateSidebar({
         <div
           role="group"
           aria-label="오늘 기준으로 빠르게 추가"
-          className="grid grid-cols-3 gap-1.5 sm:grid-cols-6 lg:grid-cols-2"
+          className="grid grid-cols-4 gap-1.5 sm:grid-cols-7 lg:grid-cols-2"
         >
           {QUICK_OFFSETS.map(({ offset, label }) => {
             const iso = addOffsetISO(today, offset);
@@ -82,7 +86,7 @@ export function DateSidebar({
                 type="button"
                 onClick={() => onQuickAdd(offset)}
                 title={`${formatLabelDate(iso)} 추가`}
-                className="h-8 rounded-lg border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface-2"
+                className="h-8 rounded-lg border border-line bg-surface px-1 text-xs font-medium whitespace-nowrap text-ink transition-colors last:col-span-2 hover:border-line-strong hover:bg-surface-2 sm:last:col-span-1 lg:last:col-span-2"
               >
                 {label}
               </button>
